@@ -77,6 +77,20 @@ async function refreshProbes(){
 setInterval(()=>refreshProbes().catch(console.error),60000).unref();
 setTimeout(()=>refreshProbes().catch(console.error),1500).unref();
 
+
+async function fetchNetrouting(){
+ const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),8000);
+ try{
+  const r=await fetch('https://status.netrouting.com/feed.xml',{signal:ctrl.signal,headers:{'User-Agent':'NetWatchPeru/1.2'}});
+  if(!r.ok)throw Error('HTTP '+r.status);
+  const xml=await r.text();
+  const items=[...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].slice(0,25);
+  const tag=(body,key)=>{const m=body.match(new RegExp('<'+key+'(?:\\s[^>]*)?>([\\s\\S]*?)<\\/'+key+'>','i'));return m?m[1].replace(/^<!\[CDATA\[|\]\]>$/g,'').trim():''};
+  const clean=x=>cut(x.replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>'));
+  return items.map((match,i)=>{const b=match[1];const dt=Date.parse(tag(b,'pubDate'));return {id:'netrouting:'+i+':'+dt,service:'Netrouting',name:clean(tag(b,'title')),created_at:Number.isFinite(dt)?new Date(dt).toISOString():null,status:'published',url:'https://status.netrouting.com',details:clean(tag(b,'description'))}}).filter(x=>x.created_at&&Date.now()-Date.parse(x.created_at)<48*3600000);
+ }catch(e){return []}finally{clearTimeout(timer)}
+}
+
 let cache=null,updated=0;
 let history=[];
 let historicalEvents=[];
@@ -101,12 +115,12 @@ async function fetchOne(s){
 }
 async function getStatus(force=false){
  if(!force&&cache&&Date.now()-updated<60000)return cache;
- const services=await Promise.all(sources.map(fetchOne));
+ const [services,netroutingEvents]=await Promise.all([Promise.all(sources.map(fetchOne)),fetchNetrouting()]);
  const incidents=services.flatMap(s=>s.incidents);
  const now=new Date().toISOString();
  for(const incident of incidents)if(!history.some(h=>h.id===incident.id))history.unshift({...incident,firstSeen:now});
  history=history.filter(h=>Date.now()-new Date(h.firstSeen).getTime()<7*86400000).slice(0,200);
- const events=historicalEvents.filter(e=>Date.now()-new Date(e.created_at).getTime()<24*3600000);
+ const events=[...historicalEvents,...netroutingEvents].filter(e=>Date.now()-new Date(e.created_at).getTime()<24*3600000);
  cache={updatedAt:now,services:services.map(({incidents,...rest})=>rest),incidents,history,links,events};
  updated=Date.now();
  return cache;
