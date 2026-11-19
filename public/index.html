@@ -9,8 +9,14 @@ a{color:#80b9ff}button,select{border:1px solid #33425d;background:#17243a;color:
 .stat{font-size:30px;font-weight:750}.muted{color:#9aacc7;font-size:13px}.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .state{padding:5px 9px;border-radius:30px;font-size:12px;background:#24344e}.ok{color:#72e3aa}.bad{color:#ff9e9e}.unknown{color:#e6c57e}
 li{padding:12px 0;border-bottom:1px solid #29384e}ul{padding-left:18px}small{color:#9aacc7}
-.hero{margin:18px 0 20px;background:linear-gradient(125deg,#17294b,#111d30);border:1px solid #364769;border-radius:18px;padding:22px}.hero h2{margin:0 0 6px}.selector{display:flex;flex-wrap:wrap;gap:7px;margin:15px 0}.selector button{border-radius:22px;padding:9px 14px}.selector button.active{background:#1564a7;border-color:#67b5fa}.chartbox{background:#0d182c;border:1px solid #2b415e;border-radius:12px;padding:10px;min-height:245px}.chartbox svg{display:block;width:100%;height:220px}.chart-legend{color:#9bacc7;font-size:12px;margin-top:8px}.chart-note{padding:35px 12px;text-align:center;color:#bcc9dc}.chart-note a{display:inline-block;margin-top:12px}.chart-axis{fill:#9aaece;font:11px system-ui,Arial}.chart-grid{stroke:#31445f;stroke-dasharray:3 6}</style></head><body>
+.hero{margin:18px 0 20px;background:linear-gradient(125deg,#17294b,#111d30);border:1px solid #364769;border-radius:18px;padding:22px}.hero h2{margin:0 0 6px}.selector{display:flex;flex-wrap:wrap;gap:7px;margin:15px 0}.selector button{border-radius:22px;padding:9px 14px}.selector button.active{background:#1564a7;border-color:#67b5fa}.chartbox{background:#0d182c;border:1px solid #2b415e;border-radius:12px;padding:10px;min-height:245px}.chartbox svg{display:block;width:100%;height:220px}.chart-legend{color:#9bacc7;font-size:12px;margin-top:8px}.chart-note{padding:35px 12px;text-align:center;color:#bcc9dc}.chart-note a{display:inline-block;margin-top:12px}.chart-axis{fill:#9aaece;font:11px system-ui,Arial}.chart-grid{stroke:#31445f;stroke-dasharray:3 6}.probe-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:12px 0}.probe-card{background:#122038;border:1px solid #2a456b;border-radius:14px;padding:16px}.probe-card .big{font-size:26px;font-weight:750;margin:10px 0}.probe-card .graph{width:100%;height:75px;display:block}.warn{color:#ffbd69}.down{color:#ff7c86}.mini-note{font-size:12px;color:#99b5d3;margin-top:8px}.meta{color:#afbdd2;font-size:13px}</style></head><body>
 <header><div><div class="muted">CENTRO DE MONITOREO · PERÚ</div><h1>📡 NETWATCH Perú</h1><p>Incidencias oficiales de infraestructura, cloud y telefonía VoIP</p></div><div><button onclick="load(true)">↻ Actualizar ahora</button></div></header>
+<section class="hero" aria-label="Latencia y disponibilidad de servicios">
+<div class="row"><div><div class="muted">MEDICIÓN AUTOMÁTICA DESDE EL SERVIDOR DE RENDER</div><h2>Latencia HTTPS e intermitencia</h2></div><span class="state" id="probeTime">Iniciando mediciones…</span></div>
+<p class="meta">Mide el tiempo de respuesta HTTP(S) de endpoints públicos una vez por minuto. No es un ping ICMP ni confirma el estado de redes privadas.</p>
+<div class="probe-grid" id="probes"><div class="probe-card">Consultando servidores…</div></div>
+<div class="mini-note">Una respuesta lenta no implica necesariamente un fallo de red. Los umbrales son orientativos: lento ≥ 800 ms, muy lento ≥ 1500 ms. Los datos comienzan a acumularse al iniciar el servidor y se borran si Render reinicia la instancia.</div>
+</section>
 <section class="hero" aria-label="Panel gráfico principal"><div class="row"><div><div class="muted">MONITOREO GRÁFICO · ÚLTIMAS 24 HORAS</div><h2 id="chartTitle">Incidencias por proveedor</h2></div><span class="state" id="chartSource">Elige una fuente</span></div><div class="selector" id="chartSelectors"></div><div class="chartbox" id="chart"></div><div class="chart-legend" id="chartLegend"></div></section>
 <div class="stats">
 <div class="card"><div class="muted">Fuentes verificadas</div><div class="stat" id="total">—</div></div>
@@ -25,7 +31,7 @@ li{padding:12px 0;border-bottom:1px solid #29384e}ul{padding-left:18px}small{col
 <p><small>Las fuentes oficiales se consultan automáticamente cada 60 segundos mientras la página está abierta. Los operadores peruanos son enlaces de consulta externa, no estados comprobados por API. Un estado «sin incidencias» no garantiza ausencia de fallas locales. La instancia gratuita puede suspenderse por inactividad.</small></p>
 <script>
 let data={services:[],incidents:[],history:[],links:[],events:[]};
-let chosen='Movistar Perú';
+let chosen='UpCloud';
 const operators=[
 {name:'Movistar Perú',url:'https://downdetector.pe/problemas/movistar/'},
 {name:'Claro Perú',url:'https://downdetector.pe/problemas/claro/'},
@@ -65,6 +71,35 @@ function drawChart(){
  document.querySelector('#chartLegend').innerHTML='Cantidad de incidentes publicados por hora (no son reportes de usuarios). Total de las últimas 24 h: <b>'+buckets.reduce((a,b)=>a+b,0)+'</b> · '+link(item.url,'Fuente oficial')+'. Las horas son aproximadas y la disponibilidad depende de la fuente.';
 }
 
+
+function drawProbes(d){
+ const parent=document.querySelector('#probes');
+ document.querySelector('#probeTime').textContent=d.updatedAt?'Medición: '+new Date(d.updatedAt).toLocaleTimeString('es-PE'):'Sin datos';
+ parent.innerHTML=(d.probes||[]).map(p=>{
+ const samples=(d.series||{})[p.id]||[];
+ const ok=samples.filter(x=>x.ok).length;
+ const availability=samples.length?Math.round(100*ok/samples.length):null;
+ const failed=samples.filter(x=>!x.ok).length;
+ const color=!p.ok?'down':p.ms>=1500?'down':p.ms>=800?'warn':'ok';
+ const label=!p.ok?'Sin respuesta / error':p.ms>=1500?'Muy lento':p.ms>=800?'Respuesta lenta':'Respuesta obtenida';
+ const points=samples.filter(x=>x.ms!==null).map((x,i)=>({time:Date.parse(x.at),ms:x.ms}));
+ let graph='<div class="muted">Acumulando muestras para la gráfica…</div>';
+ if(points.length>=2){
+   const minT=Date.now()-24*3600000;
+   const maxY=Math.max(1000,...points.map(x=>x.ms));
+   const coords=points.map(x=>[8+((x.time-minT)/(24*3600000))*292,72-x.ms/maxY*62]);
+   graph='<svg class="graph" viewBox="0 0 310 80" preserveAspectRatio="none"><line x1="8" y1="72" x2="300" y2="72" stroke="#4d6385"/><line x1="8" y1="'+(72-800/maxY*62)+'" x2="300" y2="'+(72-800/maxY*62)+'" stroke="#ddac65" stroke-dasharray="4,5"/><polyline fill="none" stroke="#40cff0" stroke-width="2" points="'+coords.map(x=>x[0].toFixed(1)+','+x[1].toFixed(1)).join(' ')+'"/></svg>';
+ }
+ return '<div class="probe-card"><div class="row"><b>'+safe(p.name)+'</b><span class="'+color+'">'+safe(label)+'</span></div><div class="big '+color+'">'+(p.ms===null?'N/D':p.ms+' ms')+'</div>'+graph+'<div class="meta">Muestras: '+samples.length+' · Errores: '+failed+' · Disponibilidad observada: '+(availability===null?'N/D':availability+'%')+'</div><div class="mini-note">Código HTTP: '+safe(p.httpCode===null?'Sin respuesta':p.httpCode)+' · '+link(p.url,'Comprobar destino')+'</div></div>';
+ }).join('');
+}
+async function loadProbes(){
+ try{
+  const r=await fetch('/api/probes',{cache:'no-store'});if(!r.ok)throw Error('Error '+r.status);
+  drawProbes(await r.json());
+ }catch(e){document.querySelector('#probes').textContent='No se pudieron obtener las mediciones del servidor.'}
+}
+
 const safe=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const allowed=u=>{try{const a=new URL(u);return /^https?:$/.test(a.protocol)?a.href:'#'}catch{return '#'}};
 const link=(url,label)=>'<a target="_blank" rel="noopener noreferrer" href="'+safe(allowed(url))+'">'+safe(label)+'</a>';
@@ -85,5 +120,5 @@ async function load(force=false){
  drawChart();
  }catch(e){document.querySelector('#updated').textContent='Sin conexión';console.error(e);}
 }
-load();setInterval(()=>load(),60000);
+load();loadProbes();setInterval(()=>{load();loadProbes()},60000);
 </script></body></html>
