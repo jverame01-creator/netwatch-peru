@@ -9,8 +9,9 @@ a{color:#80b9ff}button,select{border:1px solid #33425d;background:#17243a;color:
 .stat{font-size:30px;font-weight:750}.muted{color:#9aacc7;font-size:13px}.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .state{padding:5px 9px;border-radius:30px;font-size:12px;background:#24344e}.ok{color:#72e3aa}.bad{color:#ff9e9e}.unknown{color:#e6c57e}
 li{padding:12px 0;border-bottom:1px solid #29384e}ul{padding-left:18px}small{color:#9aacc7}
-</style></head><body>
+.hero{margin:18px 0 20px;background:linear-gradient(125deg,#17294b,#111d30);border:1px solid #364769;border-radius:18px;padding:22px}.hero h2{margin:0 0 6px}.selector{display:flex;flex-wrap:wrap;gap:7px;margin:15px 0}.selector button{border-radius:22px;padding:9px 14px}.selector button.active{background:#1564a7;border-color:#67b5fa}.chartbox{background:#0d182c;border:1px solid #2b415e;border-radius:12px;padding:10px;min-height:245px}.chartbox svg{display:block;width:100%;height:220px}.chart-legend{color:#9bacc7;font-size:12px;margin-top:8px}.chart-note{padding:35px 12px;text-align:center;color:#bcc9dc}.chart-note a{display:inline-block;margin-top:12px}.chart-axis{fill:#9aaece;font:11px system-ui,Arial}.chart-grid{stroke:#31445f;stroke-dasharray:3 6}</style></head><body>
 <header><div><div class="muted">CENTRO DE MONITOREO · PERÚ</div><h1>📡 NETWATCH Perú</h1><p>Incidencias oficiales de infraestructura, cloud y telefonía VoIP</p></div><div><button onclick="load(true)">↻ Actualizar ahora</button></div></header>
+<section class="hero" aria-label="Panel gráfico principal"><div class="row"><div><div class="muted">MONITOREO GRÁFICO · ÚLTIMAS 24 HORAS</div><h2 id="chartTitle">Incidencias por proveedor</h2></div><span class="state" id="chartSource">Elige una fuente</span></div><div class="selector" id="chartSelectors"></div><div class="chartbox" id="chart"></div><div class="chart-legend" id="chartLegend"></div></section>
 <div class="stats">
 <div class="card"><div class="muted">Fuentes verificadas</div><div class="stat" id="total">—</div></div>
 <div class="card"><div class="muted">Servicios con incidencias</div><div class="stat" id="affected">—</div></div>
@@ -23,7 +24,47 @@ li{padding:12px 0;border-bottom:1px solid #29384e}ul{padding-left:18px}small{col
 <h2>Operadores peruanos y monitoreo externo</h2><div class="cards" id="links"></div>
 <p><small>Las fuentes oficiales se consultan automáticamente cada 60 segundos mientras la página está abierta. Los operadores peruanos son enlaces de consulta externa, no estados comprobados por API. Un estado «sin incidencias» no garantiza ausencia de fallas locales. La instancia gratuita puede suspenderse por inactividad.</small></p>
 <script>
-let data={services:[],incidents:[],history:[],links:[]};
+let data={services:[],incidents:[],history:[],links:[],events:[]};
+let chosen='Movistar Perú';
+const operators=[
+{name:'Movistar Perú',url:'https://downdetector.pe/problemas/movistar/'},
+{name:'Claro Perú',url:'https://downdetector.pe/problemas/claro/'},
+{name:'Entel Perú',url:'https://downdetector.pe/problemas/entel/'},
+{name:'WIN Perú',url:'https://downdetector.pe/'}
+];
+function drawChart(){
+ const all=[...operators,...data.services.map(s=>({name:s.name,url:s.url,official:true}))];
+ const item=all.find(x=>x.name===chosen)||all[0];
+ document.querySelector('#chartTitle').textContent='Problemas de '+item.name+' en las últimas 24 horas';
+ document.querySelector('#chartSelectors').innerHTML=all.map(x=>'<button class="'+(chosen===x.name?'active':'')+'" data-service="'+safe(x.name)+'">'+safe(x.name)+'</button>').join('');
+ document.querySelectorAll('#chartSelectors button').forEach(b=>b.addEventListener('click',()=>{chosen=b.dataset.service;drawChart()}));
+ const node=document.querySelector('#chart');
+ if(!item.official){
+  node.innerHTML='<div class="chart-note"><b>Gráfica de reportes no disponible en esta integración</b><p>Downdetector no proporciona una serie pública gratuita autorizada para reproducir su gráfica aquí. No mostramos datos simulados.</p>'+link(item.url,'Ver gráfica oficial de '+item.name)+'</div>';
+  document.querySelector('#chartSource').textContent='Fuente externa';
+  document.querySelector('#chartLegend').textContent='En el enlace puedes consultar el gráfico actualizado directamente en Downdetector.';
+  return;
+ }
+ const now=new Date(data.updatedAt||Date.now()).getTime();
+ const buckets=Array(24).fill(0);
+ (data.events||[]).filter(e=>e.service===item.name).forEach(e=>{
+  const age=(now-Date.parse(e.created_at))/3600000;
+  if(age>=0&&age<24)buckets[23-Math.floor(age)]++;
+ });
+ const max=Math.max(1,...buckets);
+ const W=950,H=220,left=42,right=12,top=18,bottom=30;
+ const iw=W-left-right,ih=H-top-bottom;
+ const xy=(i,val)=>[left+i*iw/23,top+ih-(val/max)*ih];
+ const pts=buckets.map((v,i)=>xy(i,v));
+ const line=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+ const area=line+' L'+(left+iw)+' '+(top+ih)+' L'+left+' '+(top+ih)+' Z';
+ const grids=Array.from({length:5},(_,i)=>{const y=top+i*ih/4;return '<line class="chart-grid" x1="'+left+'" y1="'+y+'" x2="'+(W-right)+'" y2="'+y+'"/><text class="chart-axis" x="34" y="'+(y+4)+'" text-anchor="end">'+Math.round(max*(4-i)/4)+'</text>'}).join('');
+ const labels=[0,6,12,18,23].map(i=>{const t=new Date(now-(23-i)*3600000);return '<text class="chart-axis" x="'+xy(i,0)[0]+'" y="'+(H-8)+'" text-anchor="middle">'+t.toLocaleTimeString('es-PE',{hour:'numeric',hour12:true})+'</text>'}).join('');
+ node.innerHTML='<svg role="img" aria-label="Incidentes oficiales iniciados por hora durante las últimas 24 horas" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+grids+'<path d="'+area+'" fill="#1b9fce" opacity=".28"/><path d="'+line+'" fill="none" stroke="#42d1ef" stroke-width="2.5" vector-effect="non-scaling-stroke"/>'+pts.map(p=>'<circle cx="'+p[0]+'" cy="'+p[1]+'" r="2.5" fill="#42d1ef"/>').join('')+labels+'</svg>';
+ document.querySelector('#chartSource').textContent='API oficial';
+ document.querySelector('#chartLegend').innerHTML='Cantidad de incidentes publicados por hora (no son reportes de usuarios). Total de las últimas 24 h: <b>'+buckets.reduce((a,b)=>a+b,0)+'</b> · '+link(item.url,'Fuente oficial')+'. Las horas son aproximadas y la disponibilidad depende de la fuente.';
+}
+
 const safe=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const allowed=u=>{try{const a=new URL(u);return /^https?:$/.test(a.protocol)?a.href:'#'}catch{return '#'}};
 const link=(url,label)=>'<a target="_blank" rel="noopener noreferrer" href="'+safe(allowed(url))+'">'+safe(label)+'</a>';
@@ -41,6 +82,7 @@ async function load(force=false){
  document.querySelector('#services').innerHTML=data.services.map(s=>'<div class="card"><div class="row"><b>'+safe(s.name)+'</b><span class="state '+(s.state==='none'?'ok':s.state==='unknown'?'unknown':'bad')+'">'+safe(s.state)+'</span></div><p>'+safe(s.description)+'</p><small>'+safe(s.type)+'</small><div>'+link(s.url,'Ver fuente oficial')+'</div></div>').join('');
  document.querySelector('#links').innerHTML=data.links.map(s=>'<div class="card">'+link(s.url,s.name)+'<div class="muted">Consulta externa · Sin integración directa</div></div>').join('');
  renderIncidents();
+ drawChart();
  }catch(e){document.querySelector('#updated').textContent='Sin conexión';console.error(e);}
 }
 load();setInterval(()=>load(),60000);
