@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NETWATCH Perú | Incidencias de red</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui,Arial;background:#0b1120;color:#e9f0ff}*{box-sizing:border-box}
+body{max-width:1160px;margin:auto;padding:22px}header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{margin:8px 0 2px;font-size:30px}h2{margin:28px 0 12px;font-size:20px}p{color:#a6b6d0}
+a{color:#80b9ff}button,select{border:1px solid #33425d;background:#17243a;color:#fff;border-radius:10px;padding:11px;cursor:pointer}
+.card{padding:20px;border:1px solid #2a3951;background:#131e31;border-radius:16px}.stats,.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.stat{font-size:30px;font-weight:750}.muted{color:#9aacc7;font-size:13px}.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.state{padding:5px 9px;border-radius:30px;font-size:12px;background:#24344e}.ok{color:#72e3aa}.bad{color:#ff9e9e}.unknown{color:#e6c57e}
+li{padding:12px 0;border-bottom:1px solid #29384e}ul{padding-left:18px}small{color:#9aacc7}
+</style></head><body>
+<header><div><div class="muted">CENTRO DE MONITOREO · PERÚ</div><h1>📡 NETWATCH Perú</h1><p>Incidencias oficiales de infraestructura, cloud y telefonía VoIP</p></div><div><button onclick="load(true)">↻ Actualizar ahora</button></div></header>
+<div class="stats">
+<div class="card"><div class="muted">Fuentes verificadas</div><div class="stat" id="total">—</div></div>
+<div class="card"><div class="muted">Servicios con incidencias</div><div class="stat" id="affected">—</div></div>
+<div class="card"><div class="muted">Incidentes activos</div><div class="stat" id="active">—</div></div>
+<div class="card"><div class="muted">Última comprobación</div><div class="stat" style="font-size:19px" id="updated">Consultando...</div></div>
+</div>
+<h2>Estado de proveedores</h2><div class="cards" id="services"></div>
+<div class="row"><h2>Incidencias detectadas</h2><label>Periodo: <select id="period" onchange="renderIncidents()"><option value="1">Última hora</option><option value="6">6 horas</option><option value="24">24 horas</option><option value="168">7 días</option></select></label></div>
+<div class="card"><ul id="incidents">Cargando incidencias…</ul></div>
+<h2>Operadores peruanos y monitoreo externo</h2><div class="cards" id="links"></div>
+<p><small>Las fuentes oficiales se consultan automáticamente cada 60 segundos mientras la página está abierta. Los operadores peruanos son enlaces de consulta externa, no estados comprobados por API. Un estado «sin incidencias» no garantiza ausencia de fallas locales. La instancia gratuita puede suspenderse por inactividad.</small></p>
+<script>
+let data={services:[],incidents:[],history:[],links:[]};
+const safe=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const allowed=u=>{try{const a=new URL(u);return /^https?:$/.test(a.protocol)?a.href:'#'}catch{return '#'}};
+const link=(url,label)=>'<a target="_blank" rel="noopener noreferrer" href="'+safe(allowed(url))+'">'+safe(label)+'</a>';
+function renderIncidents(){
+ const hours=+document.querySelector('#period').value;
+ const filtered=data.history.filter(i=>Date.now()-new Date(i.firstSeen||i.date).getTime()<=hours*3600000);
+ document.querySelector('#incidents').innerHTML=filtered.length?filtered.map(i=>'<li><b>'+safe(i.name)+'</b> · '+safe(i.service)+'<br><small>'+safe(i.details||i.status)+' · Detectado '+safe(new Date(i.firstSeen).toLocaleString('es-PE'))+'</small> · '+link(i.url,'Fuente')+'</li>').join(''):'<li>No se han registrado incidencias nuevas en esta ventana. El historial comienza desde el primer arranque del servidor.</li>';
+}
+async function load(force=false){
+ try{const r=await fetch(force?'/api/refresh':'/api/status',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);data=await r.json();
+ document.querySelector('#total').textContent=data.services.length;
+ document.querySelector('#affected').textContent=data.services.filter(s=>!['none','unknown'].includes(s.state)).length;
+ document.querySelector('#active').textContent=data.incidents.length;
+ document.querySelector('#updated').textContent=new Date(data.updatedAt).toLocaleTimeString('es-PE');
+ document.querySelector('#services').innerHTML=data.services.map(s=>'<div class="card"><div class="row"><b>'+safe(s.name)+'</b><span class="state '+(s.state==='none'?'ok':s.state==='unknown'?'unknown':'bad')+'">'+safe(s.state)+'</span></div><p>'+safe(s.description)+'</p><small>'+safe(s.type)+'</small><div>'+link(s.url,'Ver fuente oficial')+'</div></div>').join('');
+ document.querySelector('#links').innerHTML=data.links.map(s=>'<div class="card">'+link(s.url,s.name)+'<div class="muted">Consulta externa · Sin integración directa</div></div>').join('');
+ renderIncidents();
+ }catch(e){document.querySelector('#updated').textContent='Sin conexión';console.error(e);}
+}
+load();setInterval(()=>load(),60000);
+</script></body></html>
