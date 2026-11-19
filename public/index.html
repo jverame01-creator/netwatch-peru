@@ -31,7 +31,7 @@ li{padding:12px 0;border-bottom:1px solid #29384e}ul{padding-left:18px}small{col
 <p><small>Las fuentes oficiales se consultan automáticamente cada 60 segundos mientras la página está abierta. Los operadores peruanos son enlaces de consulta externa, no estados comprobados por API. Un estado «sin incidencias» no garantiza ausencia de fallas locales. La instancia gratuita puede suspenderse por inactividad.</small></p>
 <script>
 let data={services:[],incidents:[],history:[],links:[],events:[]};
-let chosen='UpCloud';
+let chosen='Netrouting';
 const operators=[
 {name:'Movistar Perú',url:'https://downdetector.pe/problemas/movistar/'},
 {name:'Claro Perú',url:'https://downdetector.pe/problemas/claro/'},
@@ -39,7 +39,7 @@ const operators=[
 {name:'WIN Perú',url:'https://downdetector.pe/'}
 ];
 function drawChart(){
- const all=[...operators,...data.services.map(s=>({name:s.name,url:s.url,official:true}))];
+ const all=[...operators,{name:'Netrouting',url:'https://status.netrouting.com',official:true},...data.services.map(s=>({name:s.name,url:s.url,official:true}))];
  const item=all.find(x=>x.name===chosen)||all[0];
  document.querySelector('#chartTitle').textContent='Problemas de '+item.name+' en las últimas 24 horas';
  document.querySelector('#chartSelectors').innerHTML=all.map(x=>'<button class="'+(chosen===x.name?'active':'')+'" data-service="'+safe(x.name)+'">'+safe(x.name)+'</button>').join('');
