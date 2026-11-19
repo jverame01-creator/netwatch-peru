@@ -21,6 +21,7 @@ const links=[
 ];
 let cache=null,updated=0;
 let history=[];
+let historicalEvents=[];
 const cut=x=>String(x??'').slice(0,1000);
 async function fetchOne(s){
  const controller=new AbortController();
@@ -29,6 +30,12 @@ async function fetchOne(s){
   const r=await fetch(s.api,{signal:controller.signal,headers:{'User-Agent':'NetWatchPeru/1.0'}});
   if(!r.ok)throw Error('HTTP '+r.status);
   const j=await r.json();
+  let archived=[];
+  try{
+   const ar=await fetch(s.url+'/api/v2/incidents.json',{signal:controller.signal,headers:{'User-Agent':'NetWatchPeru/1.1'}});
+   if(ar.ok){const aj=await ar.json();archived=(aj.incidents||[]).filter(i=>i.created_at&&Date.now()-Date.parse(i.created_at)<48*3600000).map(i=>({id:s.id+':'+i.id,service:s.name,name:cut(i.name),created_at:i.created_at,status:cut(i.status),url:s.url}));}
+  }catch(_){}
+  historicalEvents=historicalEvents.filter(e=>e.service!==s.name).concat(archived).slice(-500);
   const incidents=(j.incidents||[]).filter(i=>!['resolved','postmortem'].includes(i.status)).map(i=>({id:s.id+':'+i.id,service:s.name,name:cut(i.name),status:cut(i.status),impact:cut(i.impact||'none'),date:i.created_at,details:cut(i.incident_updates?.[0]?.body||''),url:s.url}));
   return {name:s.name,type:s.type,url:s.url,state:cut(j.status?.indicator||'unknown'),description:cut(j.status?.description||''),incidents};
  }catch(e){return {name:s.name,type:s.type,url:s.url,state:'unknown',description:'Fuente no disponible: '+cut(e.message),incidents:[]};}
@@ -41,7 +48,8 @@ async function getStatus(force=false){
  const now=new Date().toISOString();
  for(const incident of incidents)if(!history.some(h=>h.id===incident.id))history.unshift({...incident,firstSeen:now});
  history=history.filter(h=>Date.now()-new Date(h.firstSeen).getTime()<7*86400000).slice(0,200);
- cache={updatedAt:now,services:services.map(({incidents,...rest})=>rest),incidents,history,links};
+ const events=historicalEvents.filter(e=>Date.now()-new Date(e.created_at).getTime()<24*3600000);
+ cache={updatedAt:now,services:services.map(({incidents,...rest})=>rest),incidents,history,links,events};
  updated=Date.now();
  return cache;
 }
